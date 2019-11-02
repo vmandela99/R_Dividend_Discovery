@@ -1,0 +1,326 @@
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this file,
+   - You can obtain one at http://mozilla.org/MPL/2.0/. -->
+<!DOCTYPE html>
+<html><head>
+  <meta http-equiv="Content-Security-Policy" content="default-src chrome:; img-src data: *; media-src *">
+  <meta content="text/html; charset=UTF-8" http-equiv="content-type">
+  <meta name="viewport" content="width=device-width; user-scalable=0">
+  <link rel="stylesheet" href="chrome://global/skin/aboutReader.css" type="text/css">
+  <script src="chrome://global/content/reader/aboutReader.js"></script>
+<link rel="stylesheet" href="chrome://global/skin/narrate.css"><title>Tech Dividends, Part 2</title></head>
+
+<body class="light sans-serif loaded">
+  <div class="container content-width6" style="--font-size:20px;">
+    <div class="header reader-header reader-show-element">
+      <a class="domain reader-domain" href="https://www.r-bloggers.com/tech-dividends-part-2/">r-bloggers.com</a>
+      <div class="domain-border"></div>
+      <h1 class="reader-title">Tech Dividends, Part 2</h1>
+      <div class="credits reader-credits">R Views</div>
+      <div class="meta-data">
+        <div class="reader-estimated-time">11-14 minutes</div>
+      </div>
+    </div>
+
+    <hr>
+
+    <div class="content">
+      <div class="moz-reader-content line-height2 reader-show-element"><div id="readability-page-1" class="page"><div>
+
+<div><p>
+[This article was first published on  <strong><a href="https://rviews.rstudio.com/2019/08/17/tech-dividends-part-2/"> R Views</a></strong>, and kindly contributed to <a href="https://www.r-bloggers.com/" rel="nofollow">R-bloggers</a>].  (You can report issue about the content on this page <a href="https://www.r-bloggers.com/contact-us/">here</a>)
+</p><hr><p>Want to share your content on R-bloggers?<a href="https://www.r-bloggers.com/add-your-blog/" rel="nofollow"> click here</a> if you have a blog, or <a href="https://r-posts.com/" rel="nofollow"> here</a> if you don't.
+</p></div>
+
+            
+<p>In a <a href="http://www.reproduciblefinance.com/2019/07/10/dividend-discovery/" rel="nofollow" target="_blank">previous post</a>, we explored the dividend history of stocks included in the SP500, and we followed that with exploring the dividend <a href="https://rviews.rstudio.com/2019/08/07/tech-dividends-part1/" rel="nofollow" target="_blank">history of some NASDAQ tickers</a>.
+ Today’s post is a short continuation of that tech dividend theme, with 
+the aim of demonstrating how we can take our previous work and use it to
+ quickly visualize research from the real world. In this case, the 
+inspiration is the July 27th edition of Barron’s, which has an article 
+called <a href="https://www.barrons.com/articles/microsoft-and-7-other-tech-stocks-that-yield-steady-payouts-51564048801" rel="nofollow" target="_blank">8 Tech Stocks That Yield Steady Payouts</a>.
+ (As of this writing, a subscription is required to view that article, 
+unfortunately. If you do peruse that issue, I also recommend the 
+interview with GMO’s Jeff Montier, as well, as he offers an interesting <a href="https://www.barrons.com/articles/q-a-with-gmo-strategist-james-montier-51564059600" rel="nofollow" target="_blank">viewpoint on modern monetary theory</a>.)</p>
+<p>The article breaks out eight tech stock with attractive dividends: 
+IBM, HPQ, TXN, CSCO, INTC, ORCL, AAPL and MSFT. It also mentions QCOM as
+ an interesting stock to watch. We’ll piggyback on the substance of the 
+article and visualize the dividend history of those nine tickers.</p>
+<p>First, let’s load up our packages and create a vector of tickers called <code>barrons_tickers</code>. We will pass that vector to <code>tq_get(get = "dividends")</code>
+ just as we did last time. Indeed, we’re not going to do much 
+differently today, but hopefully it’s a nice way to see how previous 
+work can be applied to other situations. Ah, the joys of code that can 
+be reused!</p>
+<pre><code>library(tidyverse)
+library(tidyquant)
+library(janitor)
+library(plotly)</code></pre>
+<pre><code>barrons_tickers &lt;- 
+  c("IBM", "HPQ", "TXN", "CSCO", "INTC", "ORCL", "AAPL", "MSFT", "QCOM")
+
+
+barrons_dividends &lt;- 
+barrons_tickers %&gt;% 
+  tq_get(get = "dividends")</code></pre>
+<p>We can reuse our code from the previous post to quickly visualize 
+these tickers’ dividend histories, along with a detailed tooltip setting
+ in <code>plotly</code>.</p>
+<pre><code>ggplotly(
+barrons_dividends %&gt;% 
+  group_by(symbol) %&gt;% 
+  mutate(info = paste(date,
+                  '<br>symbol:', symbol,
+                  '<br>div: $', dividends)) %&gt;% 
+  ggplot(aes(x = date, 
+             y = dividends, 
+             color = symbol, 
+             label_tooltip = info)) + 
+  geom_point() + 
+  scale_y_continuous(labels = scales::dollar)  +
+  scale_x_date(breaks = scales::pretty_breaks(n = 10)) +
+  labs(x = "", y = "div/share", title = "Nasdaq dividends") +
+  theme(plot.title = element_text(hjust = 0.5)),
+tooltip = "label_tooltip"
+)</code></pre>
+
+
+<p>With a handful of stocks, our visualization really tells a nice 
+story. We can more clearly see the four annual payments by each company,
+ and it pops off the chart that IBM has been raising it’s dividend 
+consistently. Not bad for a company that also owns Red Hat.</p>
+<p>Let’s move beyond the dividend history and compare the dividend 
+yields for each of these tickers. We’ll grab yesterday’s closing price 
+by calling <code>tq_get(get = "stock.prices", from = "2019-08-05")</code>.</p>
+<pre><code>barrons_price &lt;- 
+barrons_tickers %&gt;% 
+  tq_get(get = "stock.prices", from = "2019-08-05")</code></pre>
+<p>Now, we estimate the annual dividend payment by taking the most recent quarterly dividend via <code>slice(n())</code> and multiplying by four.</p>
+<pre><code>barrons_dividends %&gt;% 
+  group_by(symbol) %&gt;% 
+  slice(n()) %&gt;% 
+  mutate(total_div = dividends * 4)</code></pre>
+<pre><code># A tibble: 9 x 4
+# Groups:   symbol [9]
+  symbol date       dividends total_div
+                  
+1 AAPL   2019-08-09     0.77       3.08
+2 CSCO   2019-07-03     0.35       1.4 
+3 HPQ    2019-06-11     0.16       0.64
+4 IBM    2019-08-08     1.62       6.48
+5 INTC   2019-08-06     0.315      1.26
+6 MSFT   2019-08-14     0.46       1.84
+7 ORCL   2019-07-16     0.24       0.96
+8 QCOM   2019-06-05     0.62       2.48
+9 TXN    2019-07-30     0.77       3.08</code></pre>
+<p>Next, we use <code>left_join(barrons_price, by = "symbol")</code> to add the most recent closing price.</p>
+<pre><code>barrons_dividends %&gt;% 
+  group_by(symbol) %&gt;% 
+  slice(n()) %&gt;% 
+  mutate(total_div = dividends * 4) %&gt;% 
+  left_join(barrons_price, by = "symbol") %&gt;% 
+  head()</code></pre>
+<pre><code># A tibble: 6 x 11
+# Groups:   symbol [1]
+  symbol date.x     dividends total_div date.y      open  high   low close
+                           
+1 AAPL   2019-08-09      0.77      3.08 2019-08-05  198.  199.  193.  193.
+2 AAPL   2019-08-09      0.77      3.08 2019-08-06  196.  198.  194.  197 
+3 AAPL   2019-08-09      0.77      3.08 2019-08-07  195.  200.  194.  199.
+4 AAPL   2019-08-09      0.77      3.08 2019-08-08  200.  204.  199.  203.
+5 AAPL   2019-08-09      0.77      3.08 2019-08-09  201.  203.  199.  201.
+6 AAPL   2019-08-09      0.77      3.08 2019-08-12  200.  202.  199.  200.
+# … with 2 more variables: volume , adjusted </code></pre>
+<p>That worked, but note how we now have two date columns, called <code>date.x</code> and <code>date.y</code>, since both of our tibbles had a <code>date</code> column before we joined them. In the past we have dealt with that by deleting the duplicate but this time let’s use a <code>select()</code> inside <code>left_join()</code> to remove the duplicate before joining. The full call is <code>left_join(select(barrons_price, -date), by = "symbol")</code>.</p>
+<pre><code>barrons_dividends %&gt;% 
+  group_by(symbol) %&gt;% 
+  slice(n()) %&gt;% 
+  mutate(total_div = dividends * 4) %&gt;% 
+  left_join(select(barrons_price, -date), by = "symbol") %&gt;% 
+  head()</code></pre>
+<pre><code># A tibble: 6 x 10
+# Groups:   symbol [1]
+  symbol date       dividends total_div  open  high   low close volume
+                        
+1 AAPL   2019-08-09      0.77      3.08  198.  199.  193.  193. 5.24e7
+2 AAPL   2019-08-09      0.77      3.08  196.  198.  194.  197  3.58e7
+3 AAPL   2019-08-09      0.77      3.08  195.  200.  194.  199. 3.34e7
+4 AAPL   2019-08-09      0.77      3.08  200.  204.  199.  203. 2.70e7
+5 AAPL   2019-08-09      0.77      3.08  201.  203.  199.  201. 2.46e7
+6 AAPL   2019-08-09      0.77      3.08  200.  202.  199.  200. 2.25e7
+# … with 1 more variable: adjusted </code></pre>
+<p>Now, we calculate the yield with <code>mutate(yield = total_div/close)</code>.</p>
+<pre><code>barrons_dividends %&gt;% 
+  group_by(symbol) %&gt;% 
+  slice(n()) %&gt;% 
+  mutate(total_div = dividends * 4) %&gt;% 
+  left_join(barrons_price, by = "symbol") %&gt;% 
+  select(symbol, total_div, close) %&gt;% 
+  mutate(yield = total_div/close)</code></pre>
+<pre><code># A tibble: 81 x 4
+# Groups:   symbol [9]
+   symbol total_div close  yield
+            
+ 1 AAPL        3.08 193.  0.0159
+ 2 AAPL        3.08 197   0.0156
+ 3 AAPL        3.08 199.  0.0155
+ 4 AAPL        3.08 203.  0.0151
+ 5 AAPL        3.08 201.  0.0153
+ 6 AAPL        3.08 200.  0.0154
+ 7 AAPL        3.08 209.  0.0147
+ 8 AAPL        3.08 203.  0.0152
+ 9 AAPL        3.08 202.  0.0153
+10 CSCO        1.4   51.4 0.0273
+# … with 71 more rows</code></pre>
+<p>We can plot the dividend yields as bar heights using <code>geom_col()</code>.</p>
+<pre><code>barrons_dividends %&gt;% 
+  group_by(symbol) %&gt;% 
+  slice(n()) %&gt;% 
+  mutate(total_div = dividends * 4) %&gt;% 
+  left_join(barrons_price, by = "symbol") %&gt;% 
+  select(symbol, total_div, close) %&gt;% 
+  mutate(yield = total_div/close) %&gt;% 
+  ggplot(aes(x = reorder(symbol, yield), y = yield, fill = symbol)) +
+  geom_col(width = .5) +
+  labs(x = "") + 
+  scale_y_continuous(labels = scales::percent)</code></pre>
+<p><img src="Tech%20Dividends,%20Part%202_files/unnamed-chunk-9-1.png" data-recalc-dims="1" data-lazy-src="https://i1.wp.com/rviews.rstudio.com/post/2019-08-12-tech-dividends-part-2_files/figure-html/unnamed-chunk-9-1.png?w=450&amp;is-pending-load=1#038;ssl=1"></p>
+<p>We could wrap this up with a call to <code>plotly</code>, but let’s 
+totally change directions and add some animation. Animate a chart? That 
+sounds really hard, I guess we’ll need to loop through the dates and add
+ dots as we go. A lot of work and who has the time…wait…boom…<code>gganimate</code> to the rescue!</p>
+<p>The <code>gganimate</code> package makes this so painless it’s a shame. We add <code>transition_reveal(date)</code> to the end of the code flow, and that’s it! Well, not quite; on my machine, I needed to load the <code>gifski</code> and <code>png</code> packages before any of this works, but then we’re good to go.</p>
+<pre><code>library(gganimate)
+library(gifski)
+library(png)</code></pre>
+<pre><code>barrons_dividends %&gt;% 
+  group_by(symbol) %&gt;% 
+  ggplot(aes(x = date, 
+             y = dividends, 
+             color = symbol)) + 
+  geom_point() + 
+  scale_y_continuous(labels = scales::dollar)  +
+  scale_x_date(breaks = scales::pretty_breaks(n = 10)) +
+  labs(x = "", y = "div/share", title = "Nasdaq dividends") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  transition_reveal(date)</code></pre>
+<p><img src="Tech%20Dividends,%20Part%202_files/unnamed-chunk-11-1.gif" data-recalc-dims="1" data-lazy-src="https://i0.wp.com/rviews.rstudio.com/post/2019-08-12-tech-dividends-part-2_files/figure-html/unnamed-chunk-11-1.gif?w=456&amp;is-pending-load=1#038;ssl=1"></p>
+<p>Nice!</p>
+<p>What about animating our chart that shows the dividend yield as bar heights? Well, we can’t reveal by <code>date</code> here, so we use <code>transition_states(symbol)</code>.</p>
+<pre><code>barrons_dividends %&gt;% 
+  group_by(symbol) %&gt;% 
+  slice(n()) %&gt;% 
+  mutate(total_div = dividends * 4) %&gt;% 
+  left_join(select(barrons_price, -date), by = "symbol") %&gt;% 
+  select(symbol, total_div, close) %&gt;% 
+  mutate(yield = total_div/close) %&gt;% 
+  ggplot(aes(x = reorder(symbol, yield), y = yield, fill = symbol)) +
+  geom_col(width = .5) +
+  labs(x = "") + 
+  scale_y_continuous(labels = scales::percent) +
+  transition_states(symbol)</code></pre>
+<p><img src="Tech%20Dividends,%20Part%202_files/unnamed-chunk-12-1.gif" data-recalc-dims="1" data-lazy-src="https://i2.wp.com/rviews.rstudio.com/post/2019-08-12-tech-dividends-part-2_files/figure-html/unnamed-chunk-12-1.gif?w=456&amp;is-pending-load=1#038;ssl=1"></p>
+<p>Ah, not quite perfect – notice the chart doesn’t respect the <code>reorder</code> in our <code>aes()</code>, so they appear in alphabetical order and each column disappears as the next one appears. Let’s use <code>shadow_mark()</code> to keep the previous bar and attempt to reorder the images with <code>arrange()</code>.</p>
+<pre><code>barrons_dividends %&gt;% 
+  group_by(symbol) %&gt;% 
+  slice(n()) %&gt;% 
+  mutate(total_div = dividends * 4) %&gt;% 
+  left_join(select(barrons_price, -date), by = "symbol") %&gt;%
+  select(symbol, total_div, close) %&gt;% 
+  mutate(yield = total_div/close) %&gt;% 
+  arrange(yield) %&gt;% 
+  ggplot(aes(x = reorder(symbol, yield), y = yield, fill = symbol)) +
+  geom_col(width = .5) +
+  labs(x = "") + 
+  scale_y_continuous(labels = scales::percent) +
+  transition_states(symbol, wrap = FALSE) +
+  shadow_mark()</code></pre>
+<p><img src="Tech%20Dividends,%20Part%202_files/unnamed-chunk-13-1.gif" data-recalc-dims="1" data-lazy-src="https://i0.wp.com/rviews.rstudio.com/post/2019-08-12-tech-dividends-part-2_files/figure-html/unnamed-chunk-13-1.gif?w=456&amp;is-pending-load=1#038;ssl=1"></p>
+<p>It is still not respecting the new order and defaulting to alphabetical. Let’s hard-code that reordering by converting <code>symbol</code> to a factor, ordered by <code>yield</code>. And that means a foray into the <code>forcats</code> package and <code>fct_reorder()</code>. Note we need to <code>ungroup()</code> first since <code>symbol</code> is our grouping column and then can call <code>symbol_fct = forcats::as_factor(symbol) %&gt;% fct_reorder(yield)</code>. I also think it would be a little more dramatic to remove the x-axis labels and have the ticker names appear on the chart.</p>
+<pre><code>barrons_dividends %&gt;% 
+  group_by(symbol) %&gt;% 
+  slice(n()) %&gt;% 
+  mutate(total_div = dividends * 4) %&gt;% 
+  left_join(select(barrons_price, -date), by = "symbol") %&gt;% 
+  select(symbol, total_div, close) %&gt;% 
+  mutate(yield = total_div/close) %&gt;% 
+  ungroup() %&gt;% 
+  mutate(symbol_fct = forcats::as_factor(symbol) %&gt;% fct_reorder(yield)) %&gt;%
+  ggplot(aes(x = symbol_fct, y = yield, fill = symbol_fct)) +
+  geom_col(width = .5) +
+  geom_label(aes(label = symbol, y = yield), nudge_y = .03) +
+  labs(x = "") + 
+  scale_y_continuous(labels = scales::percent) +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank()) +
+  transition_states(symbol_fct, wrap = FALSE) +
+  shadow_mark()</code></pre>
+<p><img src="Tech%20Dividends,%20Part%202_files/unnamed-chunk-14-1.gif" data-recalc-dims="1" data-lazy-src="https://i1.wp.com/rviews.rstudio.com/post/2019-08-12-tech-dividends-part-2_files/figure-html/unnamed-chunk-14-1.gif?w=456&amp;is-pending-load=1#038;ssl=1"></p>
+<p>Creating and loading those animated gifs takes some time, about 10-30
+ seconds each on my RStudio Server Pro instance. Plus, it’s totally fair
+ to quibble that these animations haven’t added any new substance to the
+ charts, they just look cool (R plots can be cool, right?). But if 
+you’ve read this far (thanks!), I might as well subject you to my rant 
+about visualization and communication being just-as-if-not-more 
+important than analytical or statistical findings. Most of the consumers
+ of our work are really busy and we’re lucky if they spend two minutes 
+glancing at whatever findings we put in front of them. We don’t have 
+long to grab their attention and communicate our message. If an 
+animation helps us, it’s worth spending the extra time on it, even 
+though we were actually ‘done’ with this job many lines of code ago.</p>
+<p>Alright, so with that:</p>
+<p>If you like this sort of code through ,check out my book, <a href="https://www.amazon.com/Reproducible-Finance-Portfolio-Analysis-Chapman/dp/1138484032" rel="nofollow" target="_blank">Reproducible Finance with R</a>.</p>
+<p>Not specific to finance, but several of the <code>stringr</code> and <code>ggplot</code> tricks in this post came from this awesome <a href="https://university.business-science.io/p/ds4b-101-r-business-analysis-r" rel="nofollow" target="_blank">Business Science University course</a>.</p>
+<p>I’m also going to be posting weekly code snippets on <a href="https://www.linkedin.com/in/jkregenstein/" rel="nofollow" target="_blank">LinkedIn</a>; connect with me there if you’re keen for some R finance stuff.</p>
+<p>Thanks for reading and see you next time!</p>
+
+
+				
+		
+
+            
+<hr><hr>
+<p>
+If you got this far, why not <strong><u>subscribe for updates</u> </strong>from the site?  Choose your flavor: <a href="https://feedburner.google.com/fb/a/mailverify?uri=RBloggers" rel="nofollow">e-mail</a>, <a href="https://twitter.com/#!/rbloggers" rel="nofollow">twitter</a>, <a href="https://feeds.feedburner.com/RBloggers" rel="nofollow">RSS</a>, or <a href="https://www.facebook.com/pages/R-bloggers/191414254890" rel="nofollow">facebook</a>...
+</p></div></div></div>
+    </div>
+
+    <div>
+      <div class="reader-message">Loading…</div>
+    </div>
+  </div>
+
+  <ul class="toolbar reader-toolbar">
+    <li><button class="button close-button" title="Close Reader View"></button></li>
+    <ul class="dropdown style-dropdown">
+      <li><button class="dropdown-toggle button style-button" title="Type controls"></button></li>
+      <li class="dropdown-popup">
+        <div class="font-type-buttons"><button class="sans-serif-button selected"><div class="name">Aa</div><div class="description">Sans-serif</div></button><button class="serif-button"><div class="name">Aa</div><div class="description">Serif</div></button></div>
+        <hr>
+        <div class="font-size-buttons">
+          <button class="minus-button" title="Decrease Font Size">
+          </button><button class="font-size-sample">Aa</button><button class="plus-button" title="Increase Font Size">
+        </button></div>
+        <hr>
+        <div class="content-width-buttons">
+          <button class="content-width-minus-button" title="Decrease Content Width">
+          </button><button class="content-width-plus-button" title="Increase Content Width">
+        </button></div>
+        <hr>
+        <div class="line-height-buttons">
+          <button class="line-height-minus-button" title="Decrease Line Height">
+          </button><button class="line-height-plus-button" title="Increase Line Height">
+        </button></div>
+        <hr>
+        <div class="color-scheme-buttons"><button class="light-button selected" title="Color Scheme Light"><div class="name">Light</div></button><button class="dark-button" title="Color Scheme Dark"><div class="name">Dark</div></button><button class="sepia-button" title="Color Scheme Sepia"><div class="name">Sepia</div></button></div>
+        <div class="dropdown-arrow">
+      </div></li>
+    </ul>
+  <ul class="dropdown narrate-dropdown"><li><button class="dropdown-toggle button narrate-toggle" title="Narrate"></button></li><li class="dropdown-popup"><div class="narrate-row narrate-control"><button class="narrate-skip-previous" disabled="disabled" title="Back"></button><button class="narrate-start-stop" title="Start"></button><button class="narrate-skip-next" disabled="disabled" title="Forward"></button></div><div class="narrate-row narrate-rate"><input class="narrate-rate-input" value="0" step="5" max="100" min="-100" type="range" title="Speed"></div><div class="narrate-row narrate-voices"><div class="voiceselect voice-select"><button class="select-toggle" aria-controls="voice-options">
+      <span class="label">Voice:</span> <span class="current-voice">Default</span>
+    </button>
+    <div class="options" id="voice-options" role="listbox"><button data-value="automatic" class="option selected" tabindex="-1" role="option" aria-selected="true">Default</button><button data-value="urn:moz-tts:sapi:Microsoft David Desktop - English (United States)?en-US" class="option" tabindex="-1" role="option">Microsoft David Desktop - English (United States)</button><button data-value="urn:moz-tts:sapi:Microsoft Zira Desktop - English (United States)?en-US" class="option" tabindex="-1" role="option">Microsoft Zira Desktop - English (United States)</button></div></div></div><div class="dropdown-arrow"></div></li></ul><button data-buttonid="pocket-button" class="button pocket-button" style="background-image: url(&quot;chrome://pocket/content/panels/img/pocket-outline.svg&quot;); background-size: 20px 20px;" title="Save to Pocket"></button></ul>
+
+
+
+
+</body></html>

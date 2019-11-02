@@ -1,0 +1,474 @@
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this file,
+   - You can obtain one at http://mozilla.org/MPL/2.0/. -->
+<!DOCTYPE html>
+<html><head>
+  <meta http-equiv="Content-Security-Policy" content="default-src chrome:; img-src data: *; media-src *">
+  <meta content="text/html; charset=UTF-8" http-equiv="content-type">
+  <meta name="viewport" content="width=device-width; user-scalable=0">
+  <link rel="stylesheet" href="chrome://global/skin/aboutReader.css" type="text/css">
+  <script src="chrome://global/content/reader/aboutReader.js"></script>
+<link rel="stylesheet" href="chrome://global/skin/narrate.css"><title>Looking back on 2018: part 1</title><link rel="shortcut icon" href="http://www.reproduciblefinance.com/favicon.png"></head>
+
+<body class="light sans-serif loaded">
+  <div class="container content-width6" style="--font-size:20px;">
+    <div class="header reader-header reader-show-element">
+      <a class="domain reader-domain" href="http://www.reproduciblefinance.com/2019/01/14/looking-back-on-last-year/">reproduciblefinance.com</a>
+      <div class="domain-border"></div>
+      <h1 class="reader-title">Looking back on 2018: part 1</h1>
+      <div class="credits reader-credits">JKR</div>
+      <div class="meta-data">
+        <div class="reader-estimated-time">19-24 minutes</div>
+      </div>
+    </div>
+
+    <hr>
+
+    <div class="content">
+      <div class="moz-reader-content line-height2 reader-show-element"><div id="readability-page-1" class="page"><div itemprop="articleBody">
+                
+                  
+                    
+                    <p>by Jonathan Regenstein</p>
+                    
+                  
+                
+                
+
+
+
+
+
+
+<p>Welcome to Reproducible Finance 2019! It’s a new year, a new 
+beginning, the Earth has completed one more trip around the sun and that
+ means it’s time to look back on the previous January to December cycle.</p>
+<p>Today and next time, we’ll explore the returns and volatilities of 
+various market sectors in 2018. We might also get into fund flows and 
+explore a new data source because <a href="https://www.ft.com/content/fdc1c064-1142-11e9-a581-4ff78404524e">this fantastic piece</a> from the FT has the wheels turning. So much data, so little time.</p>
+<p>Back to the task at hand, today we will grab data on the daily 
+returns of various stock market sector ETFs and build exploratory data 
+visualizations around that data.</p>
+<p>From an R code perspective, we will get familiar with a new source 
+for market data (tiingo, which has come up in several conversations 
+recently and seems to be gaining nice traction in the R world), build 
+some ggplots and dive into <code>highcharter</code> a bit. In that 
+sense, it’s also somewhat of a look back to our previous work because 
+we’ll be stepping through some good’ol data import, wrangling and 
+visualization. Some of the code flows might look familiar to long time 
+readers but if you’ve joined us recently, and haven’t gone back to read 
+the oh-so-invigorating previous posts, this should give a good sense of 
+how we think about working with financial data.</p>
+<p>Let’s get to it.</p>
+<p>We want to import data on 10 sector ETFs and also on SPY, the market ETF.</p>
+<p>We’ll first need the tickers of each sector ETF:</p>
+<pre><code>ticker = (<span>"XLY"</span>, <span>"XLP"</span>, <span>"XLE"</span>,  
+          <span>"XLF"</span>, <span>"XLV"</span>, <span>"XLI"</span>, <span>"XLB"</span>, 
+          <span>"XLK"</span>, <span>"XLU"</span>, <span>"XLRE"</span>, 
+          <span>"SPY"</span>)</code></pre>
+<p>And our sector labels are:</p>
+<pre><code>sector = (<span>"Consumer Discretionary"</span>, <span>"Consumer Staples"</span>, <span>"Energy"</span>, 
+          <span>"Financials"</span>, <span>"Health Care"</span>, <span>"Industrials"</span>, <span>"Materials"</span>, 
+          <span>"Information Technology"</span>, <span>"Utilities"</span>, <span>"Real Estate"</span>,
+          <span>"Market"</span>)</code></pre>
+<p>We can use the <code>tibble()</code> function to save those as columns of new <code>tibble</code>.</p>
+<p>First, let’s load up our packages for the day because we’ll need the <code>tibble</code> package via <code>tidyverse</code>.</p>
+<pre><code><span>library</span>(tidyverse)
+<span>library</span>(tidyquant)
+<span>library</span>(riingo)
+<span>library</span>(timetk)
+<span>library</span>(tibbletime)
+<span>library</span>(highcharter)
+<span>library</span>(htmltools)</code></pre>
+<p>And on to creating a tibble:</p>
+<pre><code>etf_ticker_sector &lt;- tibble(
+  ticker = c(<span>"XLY"</span>, <span>"XLP"</span>, <span>"XLE"</span>,   
+          <span>"XLF"</span>, <span>"XLV"</span>, <span>"XLI"</span>, <span>"XLB"</span>, 
+          <span>"XLK"</span>, <span>"XLU"</span>, <span>"XLRE"</span>, 
+          <span>"SPY"</span>),   
+  sector = c(<span>"Consumer Discretionary"</span>, <span>"Consumer Staples"</span>, <span>"Energy"</span>, 
+          <span>"Financials"</span>, <span>"Health Care"</span>, <span>"Industrials"</span>, <span>"Materials"</span>, 
+          <span>"Information Technology"</span>, <span>"Utilities"</span>, <span>"Real Estate"</span>,
+          <span>"Market"</span>)
+)
+
+etf_ticker_sector</code></pre>
+<pre><code># A tibble: 11 x 2
+   ticker sector                
+   &lt;chr&gt;  &lt;chr&gt;                 
+ 1 XLY    Consumer Discretionary
+ 2 XLP    Consumer Staples      
+ 3 XLE    Energy                
+ 4 XLF    Financials            
+ 5 XLV    Health Care           
+ 6 XLI    Industrials           
+ 7 XLB    Materials             
+ 8 XLK    Information Technology
+ 9 XLU    Utilities             
+10 XLRE   Real Estate           
+11 SPY    Market                </code></pre>
+<p>Now we want to import the daily prices for 2018 for these tickers. We could use <code>getSymbols()</code>
+ to access yahoo! Finance as we have done for the last 3 years, but 
+let’s do something crazy and explore a new data source, the excellent <a href="https://tiingo.com/">tiingo</a> which we access via the <a href="https://cran.r-project.org/web/packages/riingo/riingo.pdf">riingo</a> package.
+The workhorse function to grab price data is <code>riingo_prices</code>, to which we need to supply our tickers and a <code>start_date</code>/<code>end_date</code> pair.</p>
+<p>Let’s start with the tickers, which we have already saved in the <code>ticker</code> column of <code>etf_ticker_sector</code>. That wasn’t really necssary. We could have just created a vector called <code>tickers_vector</code> by calling <code>tickers_vector = c("ticker1", "ticker2", ...)</code> and then passed that vector straight to <code>riingo_prices</code>.
+ But I didn’t want to do that because I prefer to get my data to a 
+tibble first and, as we’ll see, it will make it easier to add back in 
+our sector labels, since they are aligned with our tickers in one 
+object.</p>
+<p>To pass our <code>ticker</code> column to <code>riingo_prices()</code>, we start with our tibble <code>etf_ticker_sector</code> and then pipe it to <code>pull(ticker)</code>. That will create a vector from the <code>ticker</code> column. The <code>pull()</code> function is very useful in these situations where we want to pipe or extract a column as a vector.</p>
+<p>Here’s the result of pulling the tickers:</p>
+<pre><code>  etf_ticker_sector %&gt;%
+  pull(ticker)</code></pre>
+<pre><code> [1] "XLY"  "XLP"  "XLE"  "XLF"  "XLV"  "XLI"  "XLB"  "XLK"  "XLU"  "XLRE"
+[11] "SPY" </code></pre>
+<p>Now we want to pass those tickers to <code>riingo_prices()</code>, but first we need to create an API key. <code>riingo</code> makes that quite convenient:</p>
+<pre><code>riingo_browse_signup()
+
+riingo_browse_token() </code></pre>
+<p>Then we set our key for use this session with:</p>
+<pre><code>
+
+riingo_set_token(<span>"your API key here"</span>)</code></pre>
+<p>Now we can pipe straight to <code>riingo_prices()</code>. We will set <code>start_date = "2017-12-29"</code> and <code>end_date = "2018-12-31"</code> to get prices for just 2018. I wanted the last trading day of 2017 because eventually we’ll calculate daily returns of 2018.</p>
+<pre><code>  etf_ticker_sector %&gt;%
+  pull(ticker) %&gt;% 
+  riingo_prices(., 
+                start_date = <span>"2017-12-29"</span>,
+                end_date = <span>"2018-12-31"</span>) %&gt;% 
+  head()</code></pre>
+<pre><code># A tibble: 6 x 14
+  ticker date                close  high   low  open volume adjClose
+  &lt;chr&gt;  &lt;dttm&gt;              &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt;  &lt;int&gt;    &lt;dbl&gt;
+1 XLY    2017-12-29 00:00:00  98.7  99.4  98.6  99.3 2.63e6     97.5
+2 XLY    2018-01-02 00:00:00 100.  100.   99.1  99.1 4.90e6     98.9
+3 XLY    2018-01-03 00:00:00 101.  101.  100.  100.  5.32e6     99.4
+4 XLY    2018-01-04 00:00:00 101.  101.  100.  101.  3.46e6     99.7
+5 XLY    2018-01-05 00:00:00 102.  102.  101.  101.  4.29e6    101. 
+6 XLY    2018-01-08 00:00:00 102.  102.  102.  102.  2.67e6    101. 
+# … with 6 more variables: adjHigh &lt;dbl&gt;, adjLow &lt;dbl&gt;, adjOpen &lt;dbl&gt;,
+#   adjVolume &lt;int&gt;, divCash &lt;dbl&gt;, splitFactor &lt;dbl&gt;</code></pre>
+<p>Alright, quite a bit of data: OHLC, volume, ticker dividends, splits, and note that the <code>date</code> column is in POSIX format.</p>
+<p>Let’s go ahead and coerce that to <code>date</code> format and add back in our sector labels.
+We coerce the date with the <code>ymd()</code> function from lubridate and then add our labels with a call to <code>left_join(etf_ticker_sector, by = "ticker")</code>. There’s a column called <code>ticker</code> in the prices data and in our original tibble, so we can join by that column and add back the sector labels.</p>
+<p>It’s a good idea to use <code>group_by(ticker)</code> and then <code>slice(1)</code> to grab the first row of each ticker. This helps to confirm that the sector labels got added how we planned.</p>
+<pre><code>  etf_ticker_sector %&gt;%
+  pull(ticker) %&gt;% 
+  riingo_prices(., 
+                start_date = <span>"2017-12-29"</span>,
+                end_date = <span>"2018-12-31"</span>) %&gt;%
+  mutate(date = ymd(date)) %&gt;% 
+  left_join(etf_ticker_sector, by = <span>"ticker"</span>) %&gt;%
+  select(sector, everything()) %&gt;%
+  group_by(ticker) %&gt;% 
+  slice(<span>1</span>)</code></pre>
+<pre><code># A tibble: 11 x 15
+# Groups:   ticker [11]
+   sector ticker date       close  high   low  open volume adjClose adjHigh
+   &lt;chr&gt;  &lt;chr&gt;  &lt;date&gt;     &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt;  &lt;int&gt;    &lt;dbl&gt;   &lt;dbl&gt;
+ 1 Market SPY    2017-12-29 267.  269.  267.  269.  9.60e7    262.    264. 
+ 2 Mater… XLB    2017-12-29  60.5  60.9  60.5  60.9 2.48e6     59.3    59.7
+ 3 Energy XLE    2017-12-29  72.3  72.7  72.1  72.7 7.36e6     70.1    70.5
+ 4 Finan… XLF    2017-12-29  27.9  28.2  27.9  28.2 5.52e7     27.4    27.7
+ 5 Indus… XLI    2017-12-29  75.7  76    75.6  76.0 4.83e6     74.2    74.6
+ 6 Infor… XLK    2017-12-29  64.0  64.4  63.9  64.3 6.69e6     63.0    63.4
+ 7 Consu… XLP    2017-12-29  56.9  57.2  56.9  56.9 5.09e6     55.2    55.5
+ 8 Real … XLRE   2017-12-29  32.9  33.0  32.9  33.0 9.26e5     31.8    31.8
+ 9 Utili… XLU    2017-12-29  52.7  52.9  52.6  52.8 7.03e6     50.9    51.1
+10 Healt… XLV    2017-12-29  82.7  83.5  82.6  83.3 4.88e6     81.4    82.2
+11 Consu… XLY    2017-12-29  98.7  99.4  98.6  99.3 2.63e6     97.5    98.2
+# … with 5 more variables: adjLow &lt;dbl&gt;, adjOpen &lt;dbl&gt;, adjVolume &lt;int&gt;,
+#   divCash &lt;dbl&gt;, splitFactor &lt;dbl&gt;</code></pre>
+<p>Okay, we have daily data for our ETFs and sector labels. Now, let’s 
+calculate the daily returns of each sector. We’ll start by slimming our 
+data down to just the <code>sector</code>, <code>date</code> and <code>adjClose</code> columns. Then we’ll <code>group_by(sector)</code> and calculate daily returns with <code>mutate(daily_return = log(adjClose) - log(lag(adjClose)))</code>.</p>
+<pre><code>  etf_ticker_sector %&gt;%
+  pull(ticker) %&gt;% 
+  riingo_prices(., 
+                start_date = <span>"2017-12-29"</span>,
+                end_date = <span>"2018-12-31"</span>) %&gt;%
+  mutate(date = ymd(date)) %&gt;%
+  left_join(etf_ticker_sector, by = <span>"ticker"</span>) %&gt;%
+  select(sector, date, adjClose) %&gt;%
+  group_by(sector) %&gt;% 
+  mutate(daily_return = log(adjClose) - log(lag(adjClose))) %&gt;% 
+  na.omit() %&gt;% 
+  slice(<span>1</span>)</code></pre>
+<pre><code># A tibble: 11 x 4
+# Groups:   sector [11]
+   sector                 date       adjClose daily_return
+   &lt;chr&gt;                  &lt;date&gt;        &lt;dbl&gt;        &lt;dbl&gt;
+ 1 Consumer Discretionary 2018-01-02     98.9     0.0151  
+ 2 Consumer Staples       2018-01-02     54.9    -0.00617 
+ 3 Energy                 2018-01-02     71.3     0.0163  
+ 4 Financials             2018-01-02     27.4     0.000358
+ 5 Health Care            2018-01-02     82.3     0.0112  
+ 6 Industrials            2018-01-02     74.7     0.00593 
+ 7 Information Technology 2018-01-02     63.8     0.0123  
+ 8 Market                 2018-01-02    264.      0.00713 
+ 9 Materials              2018-01-02     60.2     0.0141  
+10 Real Estate            2018-01-02     31.6    -0.00578 
+11 Utilities              2018-01-02     50.4    -0.00934 </code></pre>
+<p>Notice that our first daily return is for January 2nd. That makes 
+sense because January 1st is generally a national holiday and the 
+markets are closed. If we did have a daily return for January 1st, it 
+would be worth investigating to make sure the market was indeed open 
+that day.</p>
+<p>Let’s go ahead and save that data on daily returns by sector as an object called <code>sector_returns_2018</code>.</p>
+<pre><code>sector_returns_2018 &lt;- 
+  etf_ticker_sector %&gt;%
+  pull(ticker) %&gt;% 
+  riingo_prices(., 
+                start_date = <span>"2017-12-29"</span>,
+                end_date = <span>"2018-12-31"</span>) %&gt;%
+  mutate(date = ymd(date)) %&gt;%
+  left_join(etf_ticker_sector, by = <span>"ticker"</span>) %&gt;%
+  select(sector, date, adjClose) %&gt;%
+  group_by(sector) %&gt;% 
+  mutate(daily_return = log(adjClose) - log(lag(adjClose))) %&gt;% 
+  na.omit() </code></pre>
+<p>We have our data and now the fun part - let’s do some exploration and visualization and get a feel for 2018. We start with <code>ggplot()</code>
+ and create a chart showing the daily return of each ETF, colored. We 
+want date on the x axis, daily returns on the y-axis and different 
+colors by sector. That means a call to <code>ggplot(aes(x = date, y = daily_return, color = sector))</code>.</p>
+<pre><code>sector_returns_2018 %&gt;% 
+  ggplot(aes(x = date, y = daily_return, color = sector))</code></pre>
+<p><a href="http://d33wubrfki0l68.cloudfront.net/d16a9328c2f0729791d2efd785210a2ae00991bd/92a66/post/2019-01-14-looking-back-on-2018-part-1_files/figure-html/unnamed-chunk-13-1.png" title="" rel="article0"><img src="Looking%20back%20on%202018%20%20part%201_files/unnamed-chunk-13-1.png" moz-reader-center="true" width="672"></a></p>
+<p>Mmmmm, not exactly what we had in mind. It’s a blank canvas! That’s because we have told <code>ggplot()</code> what data we want mapped where, but we haven’t layered on a geom yet. Let’s add <code>geom_col()</code>.</p>
+<pre><code>sector_returns_2018 %&gt;% 
+  ggplot(aes(x = date, y = daily_return, color = sector)) + 
+  geom_col()</code></pre>
+<p><a href="http://d33wubrfki0l68.cloudfront.net/30b4ad242211f6a0763ee694e0395235d4bf77ec/a345c/post/2019-01-14-looking-back-on-2018-part-1_files/figure-html/unnamed-chunk-14-1.png" title="" rel="article0"><img src="Looking%20back%20on%202018%20%20part%201_files/unnamed-chunk-14-1.png" moz-reader-center="true" width="672"></a></p>
+<p>Better, we have a chart of all our data! But it’s a bit hard to see the individual returns. Let’s <code>facet_wrap()</code> by sector. I also don’t love that legend so will add <code>show.legend = FALSE</code> to <code>geom_col()</code>.</p>
+<pre><code>sector_returns_2018 %&gt;% 
+  ggplot(aes(x = date, y = daily_return, color = sector)) + 
+  geom_col(show.legend = <span>FALSE</span>) + 
+  facet_wrap(~sector)</code></pre>
+<p><a href="http://d33wubrfki0l68.cloudfront.net/dff0aff3aa01e380eededc2b6ae3d384c17878b7/b994b/post/2019-01-14-looking-back-on-2018-part-1_files/figure-html/unnamed-chunk-15-1.png" title="" rel="article0"><img src="Looking%20back%20on%202018%20%20part%201_files/unnamed-chunk-15-1.png" moz-reader-center="true" width="672"></a></p>
+<p>Very close, but the date is all jumbled and the y-axis label isnt’ quite right - there’s no <code>%</code> sign.
+Let’s change the angle of the date labels to 45 degress with <code>theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))</code> and add the percentage sign wih <code>scale_y_continuous(labels = function(x) paste0(x, "%"))</code>.</p>
+<pre><code>sector_returns_2018 %&gt;% 
+  ggplot(aes(x = date, y = daily_return, color = sector)) + 
+  geom_col(show.legend = <span>FALSE</span>) + 
+  facet_wrap(~sector) +
+  theme(axis.text.x = element_text(angle = <span>45</span>, vjust = <span>1</span>, hjust=<span>1</span>)) +
+  scale_y_continuous(labels = <span>function</span>(x) paste0(x, <span>"%"</span>)) +
+  
+  labs(x = <span>""</span>, y = <span>"daily returns"</span>)</code></pre>
+<p><a href="http://d33wubrfki0l68.cloudfront.net/a73a751ea8fe6c7b71b7211aee92482734730cbe/1deec/post/2019-01-14-looking-back-on-2018-part-1_files/figure-html/unnamed-chunk-16-1.png" title="" rel="article0"><img src="Looking%20back%20on%202018%20%20part%201_files/unnamed-chunk-16-1.png" moz-reader-center="true" width="672"></a></p>
+<p>That’s an interesting panel of charts to my eye, tech looks pretty 
+volatile since October! We can and will (next time) get more rigorous 
+about such assessments by using the rolling standard deviation (and 
+we’ll add a new tool by using exponential weighting) but the basic 
+pipeline of raw data to tibble for wrangling and transformation then to 
+chart for exploration will remain the same.</p>
+<p>Let’s stick with just daily returns for today and plot the same data 
+with a different color schema. Instead of coloring by sector, let’s 
+color by whether the daily return was positive or negative. This is 
+going to be similar to what we did in a previous post on <a href="http://www.reproduciblefinance.com/2018/08/11/highcharting-jobs-friday/">highcharting jobs Friday</a>.</p>
+<p>First let’s create two new columns called <code>col_pos</code> and <code>col_neg</code>. <code>col_pos</code> will hold the daily returns that are positive and an NA for returns are negative. We code that with:</p>
+<pre><code>sector_returns_2018 %&gt;% 
+mutate(col_pos =if_else(daily_return &gt; <span>0</span>, 
+                  daily_return, as.numeric(<span>NA</span>)))</code></pre>
+<p>And <code>col_neg</code> will hold negative returns:</p>
+<pre><code>sector_returns_2018 %&gt;% 
+mutate(col_neg =if_else(daily_return &lt; <span>0</span>, 
+                  daily_return, as.numeric(<span>NA</span>)))</code></pre>
+<p>Then we’ll tell <code>ggplot()</code> to chart those two columns in 
+their own geoms and can choose a custom color. The geoms won’t overlap 
+because they have no common data. Here is the full code flow. We start 
+with <code>sector_returns_2018</code>, create our new color columns, then pipe to <code>ggplot()</code>.</p>
+<pre><code>sector_returns_2018 %&gt;% 
+   mutate(col_pos = 
+           if_else(daily_return &gt; <span>0</span>, 
+                  daily_return, as.numeric(<span>NA</span>)),
+         col_neg = 
+           if_else(daily_return &lt; <span>0</span>, 
+                  daily_return, as.numeric(<span>NA</span>))) %&gt;%
+  ggplot(aes(x = date)) +
+  geom_col(aes(y = col_neg),
+               alpha = <span>.85</span>, 
+               fill = <span>"pink"</span>, 
+               color = <span>"pink"</span>) +
+  geom_col(aes(y = col_pos),
+               alpha = <span>.85</span>, 
+               fill = <span>"cornflowerblue"</span>, 
+               color = <span>"cornflowerblue"</span>) +
+  facet_wrap(~sector)</code></pre>
+<p><a href="http://d33wubrfki0l68.cloudfront.net/aaa5569ca1aae06de76692e5139e8be63b70c782/7a412/post/2019-01-14-looking-back-on-2018-part-1_files/figure-html/unnamed-chunk-19-1.png" title="" rel="article0"><img src="Looking%20back%20on%202018%20%20part%201_files/unnamed-chunk-19-1.png" moz-reader-full-width="true" moz-reader-center="true" width="1152"></a></p>
+<p>That looks good, but let’s do some further customization of the 
+non-substantive aesthetics, meaning the aesthetics that don’t actually 
+depend on our data.</p>
+<pre><code>sector_returns_2018 %&gt;% 
+   mutate(col_pos = 
+           if_else(daily_return &gt; <span>0</span>, 
+                  daily_return, as.numeric(<span>NA</span>)),
+         col_neg = 
+           if_else(daily_return &lt; <span>0</span>, 
+                  daily_return, as.numeric(<span>NA</span>))) %&gt;%
+  ggplot(aes(x = date)) +
+  geom_col(aes(y = col_neg),
+               alpha = <span>.85</span>, 
+               fill = <span>"pink"</span>, 
+               color = <span>"pink"</span>) +
+  geom_col(aes(y = col_pos),
+               alpha = <span>.85</span>, 
+               fill = <span>"cornflowerblue"</span>, 
+               color = <span>"cornflowerblue"</span>) +
+  facet_wrap(~sector, shrink = <span>FALSE</span>) +
+  labs(title = <span>"2018 daily returns"</span>, y = <span>"daily returns"</span>) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = <span>90</span>, hjust = <span>1</span>),
+        plot.title = element_text(hjust = <span>0.5</span>),
+        plot.subtitle = element_text(hjust = <span>0.5</span>),
+        strip.background = element_blank(),
+        strip.placement = <span>"inside"</span>,
+        strip.text = element_text(size=<span>15</span>),
+        panel.spacing = unit(<span>0.2</span>, <span>"lines"</span>) ,
+        panel.background=element_rect(fill=<span>"white"</span>))</code></pre>
+<p><a href="http://d33wubrfki0l68.cloudfront.net/7abef14dfb2f526b835c3d7e93210ccc500b6d54/10eae/post/2019-01-14-looking-back-on-2018-part-1_files/figure-html/unnamed-chunk-20-1.png" title="" rel="article0"><img src="Looking%20back%20on%202018%20%20part%201_files/unnamed-chunk-20-1.png" moz-reader-full-width="true" moz-reader-center="true" width="1152"></a></p>
+<p>Before we close, let’s take some of this work and translate it to <code>highcharter</code>. If we simpy want to chart one sector’s daily returns, it would be a relatively straightforward mapping from <code>ggplot()</code> to <code>highcharter</code>. We start with our tibble <code>sector_returns_2018</code>, add a column to hold different color hex codes, and then pass the data to <code>hchart()</code> using a <code>.</code>, and set aesthetics with <code>hcaes()</code>. The key is to first <code>filter()</code> down to our sector of choice, in this caes <code>filter(sector == "Information Technology")</code>.</p>
+<pre><code>sector_returns_2018 %&gt;%
+  mutate(color_col = if_else(daily_return &gt; <span>0</span>, <span>"#6495ed"</span>, <span>"#ff9999"</span>),
+          date = ymd(date)) %&gt;% 
+  filter(sector == <span>"Information Technology"</span>) %&gt;% 
+  hchart(., hcaes(x = date, y = daily_return, color = color_col),
+         type = <span>"column"</span>,
+         pointWidth = <span>4</span>)</code></pre>
+
+<p>
+That chart looks good and we can hover on the bars to see the exact daily return and date for each observation.</p>
+<p>I love highcharter and in the next month I’ll be launching a datacamp course that covers <code>Highcharter for Finance</code> but, I must say, it doesn’t have a good way to <code>facet_wrap()</code>
+ and build separate charts for each sector. We can dream about some sort
+ of hc_facet function but for now we’ll need to build a custom function 
+for that job, similar to what we did for the <a href="http://www.reproduciblefinance.com/2018/08/11/highcharting-jobs-friday/">jobs report</a>.</p>
+<p>We start by spreading our data to wide format, because we’re going to build a chart using each column.</p>
+<pre><code>sector_returns_2018_wide &lt;- 
+  sector_returns_2018 %&gt;% 
+  select(-adjClose) %&gt;% 
+  spread(sector, daily_return)
+
+sector_returns_2018_wide</code></pre>
+<pre><code># A tibble: 251 x 12
+   date       `Consumer Discr… `Consumer Stapl…   Energy Financials
+   &lt;date&gt;                &lt;dbl&gt;            &lt;dbl&gt;    &lt;dbl&gt;      &lt;dbl&gt;
+ 1 2018-01-02         0.0151          -0.00617   1.63e-2   0.000358
+ 2 2018-01-03         0.00458         -0.000354  1.49e-2   0.00536 
+ 3 2018-01-04         0.00327          0.00283   6.02e-3   0.00922 
+ 4 2018-01-05         0.00789          0.00440  -4.00e-4   0.00282 
+ 5 2018-01-08         0.00118          0.00246   5.98e-3  -0.00141 
+ 6 2018-01-09         0.00196         -0.00140  -2.52e-3   0.00772 
+ 7 2018-01-10        -0.000686        -0.00493  -1.20e-3   0.00836 
+ 8 2018-01-11         0.0161          -0.00141   2.03e-2   0.00484 
+ 9 2018-01-12         0.0128           0.000353  9.60e-3   0.00893 
+10 2018-01-16        -0.00717          0.00458  -1.27e-2  -0.00274 
+# … with 241 more rows, and 7 more variables: `Health Care` &lt;dbl&gt;,
+#   Industrials &lt;dbl&gt;, `Information Technology` &lt;dbl&gt;, Market &lt;dbl&gt;,
+#   Materials &lt;dbl&gt;, `Real Estate` &lt;dbl&gt;, Utilities &lt;dbl&gt;</code></pre>
+<p>Now for our function that will create a separate highchart for each sector, we start with <code>map</code>
+ and pass in the columns names from that wide tibble we just created. 
+That’s how we will iterate over each sector. After mapping across the 
+names, we use <code>function(x)</code> to pass the column name into our code flow.</p>
+<pre><code>map(names(sector_returns_2018_wide[<span>2</span>:<span>11</span>]), <span>function</span>(x){
+
+sector_returns_2018_hc &lt;- 
+  sector_returns_2018 %&gt;% 
+  filter(sector == x) %&gt;% 
+   mutate(coloract = if_else(daily_return &gt; <span>0</span>, <span>"#6495ed"</span>, <span>"#ff9999"</span>))
+
+highchart() %&gt;%
+  hc_title(text = paste(x, <span>"2018 daily returns"</span>, sep = <span>" "</span>)) %&gt;%
+  hc_add_series(sector_returns_2018_hc,  
+                type = <span>"column"</span>, 
+                pointWidth = <span>4</span>,
+                hcaes(x = date,
+                      y = daily_return,
+                      color = coloract),
+                name = <span>"daily return"</span>) %&gt;% 
+  hc_xAxis(type = <span>"datetime"</span>) %&gt;%
+  hc_tooltip(pointFormat = <span>"{point.date}: {point.daily_return: .4f}%"</span>) %&gt;% 
+  hc_legend(enabled = <span>FALSE</span>) %&gt;% 
+  hc_exporting(enabled = <span>TRUE</span>)
+})</code></pre>
+<p>If you run the code chunk above, it will create 11 separate 
+highcharts of our data as stand alone charts, meaning they won’t be 
+layed out with any structure. That’s fine, but I want to be able to lay 
+these out in a grid and control the height of each chart. For that we 
+use
+<code>hw_grid(rowheight = 300, ncol = 3) %&gt;% htmltools::browsable()</code>. That will create a grid that displays each of the charts - one for each sector’s daily returns.</p>
+<pre><code>map(names(sector_returns_2018_wide[<span>2</span>:<span>11</span>]), <span>function</span>(x){
+
+sector_returns_2018_hc &lt;- 
+  sector_returns_2018 %&gt;% 
+  filter(sector == x) %&gt;% 
+   mutate(coloract = if_else(daily_return &gt; <span>0</span>, <span>"#6495ed"</span>, <span>"#ff9999"</span>),
+          date = ymd(date))
+
+highchart() %&gt;%
+  hc_title(text = paste(x, <span>"2018 daily returns"</span>, sep = <span>" "</span>)) %&gt;%
+  hc_add_series(sector_returns_2018_hc,  
+                type = <span>"column"</span>, 
+                pointWidth = <span>4</span>,
+                hcaes(x = date,
+                      y = daily_return,
+                      color = coloract),
+                name = <span>"daily return"</span>) %&gt;% 
+  hc_xAxis(type = <span>"datetime"</span>) %&gt;%
+  hc_tooltip(pointFormat = <span>"{point.date}: {point.daily_return: .4f}%"</span>) %&gt;% 
+  hc_legend(enabled = <span>FALSE</span>) %&gt;% 
+  hc_exporting(enabled = <span>TRUE</span>)
+}) %&gt;% 
+  hw_grid(rowheight = <span>300</span>, ncol = <span>3</span>) %&gt;% 
+  htmltools::browsable()</code></pre>
+
+<p>That’s all for today. In general, the flow here was to create a 
+tibble of tickers and labels, grab price data, visualize daily returns 
+organized by the original labels. We applied it to sectors, but it could
+ just as easily be applied to other labels, like risk levels, geography,
+ beta, etc.</p>
+<p>Shameless book plug for those who read to the end: if you like this sort of thing, check out my new book <a href="https://www.amazon.com/Reproducible-Finance-Portfolio-Analysis-Chapman/dp/1138484032">Reproducible Finance with R</a>!</p>
+<p>Thanks for reading and see you next time.</p>
+
+            </div></div></div>
+    </div>
+
+    <div>
+      <div class="reader-message"></div>
+    </div>
+  </div>
+
+  <ul class="toolbar reader-toolbar">
+    <li><button class="button close-button" title="Close Reader View"></button></li>
+    <ul class="dropdown style-dropdown">
+      <li><button class="dropdown-toggle button style-button" title="Type controls"></button></li>
+      <li class="dropdown-popup">
+        <div class="font-type-buttons"><button class="sans-serif-button selected"><div class="name">Aa</div><div class="description">Sans-serif</div></button><button class="serif-button"><div class="name">Aa</div><div class="description">Serif</div></button></div>
+        <hr>
+        <div class="font-size-buttons">
+          <button class="minus-button" title="Decrease Font Size">
+          </button><button class="font-size-sample">Aa</button><button class="plus-button" title="Increase Font Size">
+        </button></div>
+        <hr>
+        <div class="content-width-buttons">
+          <button class="content-width-minus-button" title="Decrease Content Width">
+          </button><button class="content-width-plus-button" title="Increase Content Width">
+        </button></div>
+        <hr>
+        <div class="line-height-buttons">
+          <button class="line-height-minus-button" title="Decrease Line Height">
+          </button><button class="line-height-plus-button" title="Increase Line Height">
+        </button></div>
+        <hr>
+        <div class="color-scheme-buttons"><button class="light-button selected" title="Color Scheme Light"><div class="name">Light</div></button><button class="dark-button" title="Color Scheme Dark"><div class="name">Dark</div></button><button class="sepia-button" title="Color Scheme Sepia"><div class="name">Sepia</div></button></div>
+        <div class="dropdown-arrow">
+      </div></li>
+    </ul>
+  <ul class="dropdown narrate-dropdown"><li><button class="dropdown-toggle button narrate-toggle" title="Narrate"></button></li><li class="dropdown-popup"><div class="narrate-row narrate-control"><button class="narrate-skip-previous" disabled="disabled" title="Back"></button><button class="narrate-start-stop" title="Start"></button><button class="narrate-skip-next" disabled="disabled" title="Forward"></button></div><div class="narrate-row narrate-rate"><input class="narrate-rate-input" value="0" step="5" max="100" min="-100" type="range" title="Speed"></div><div class="narrate-row narrate-voices"><div class="voiceselect voice-select"><button class="select-toggle" aria-controls="voice-options">
+      <span class="label">Voice:</span> <span class="current-voice">Default</span>
+    </button>
+    <div class="options" id="voice-options" role="listbox"><button data-value="automatic" class="option selected" tabindex="-1" role="option" aria-selected="true">Default</button><button data-value="urn:moz-tts:sapi:Microsoft David Desktop - English (United States)?en-US" class="option" tabindex="-1" role="option">Microsoft David Desktop - English (United States)</button><button data-value="urn:moz-tts:sapi:Microsoft Zira Desktop - English (United States)?en-US" class="option" tabindex="-1" role="option">Microsoft Zira Desktop - English (United States)</button></div></div></div><div class="dropdown-arrow"></div></li></ul><button data-buttonid="pocket-button" class="button pocket-button" style="background-image: url(&quot;chrome://pocket/content/panels/img/pocket-outline.svg&quot;); background-size: 20px 20px;" title="Save to Pocket"></button></ul>
+
+
+
+
+</body></html>

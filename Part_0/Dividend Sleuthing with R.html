@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html><head>
+  <meta http-equiv="Content-Security-Policy" content="default-src chrome:; img-src data: *; media-src *">
+  <meta content="text/html; charset=UTF-8" http-equiv="content-type">
+  <meta name="viewport" content="width=device-width; user-scalable=0">
+  <link rel="stylesheet" href="chrome://global/skin/aboutReader.css" type="text/css">
+  <script src="chrome://global/content/reader/aboutReader.js"></script>
+<link rel="stylesheet" href="chrome://global/skin/narrate.css"><title>Dividend Sleuthing with R</title><link rel="shortcut icon" href="https://i2.wp.com/www.r-bloggers.com/wp-content/uploads/2016/08/cropped-R_single_01-200.png?fit=32%2C32&amp;ssl=1"></head>
+
+<body class="light sans-serif loaded">
+  <div class="container content-width3" style="--font-size:20px;">
+    <div class="header reader-header reader-show-element">
+      <a class="domain reader-domain" href="https://www.r-bloggers.com/dividend-sleuthing-with-r/">r-bloggers.com</a>
+      <div class="domain-border"></div>
+      <h1 class="reader-title">Dividend Sleuthing with R</h1>
+      <div class="credits reader-credits">R Views</div>
+      <div class="meta-data">
+        <div class="reader-estimated-time">20-25 minutes</div>
+      </div>
+    </div>
+
+    <hr>
+
+    <div class="content">
+      <div class="moz-reader-content line-height4 reader-show-element"><div id="readability-page-1" class="page"><div>
+
+<p>
+(This article was first published on  <strong><a href="https://rviews.rstudio.com/2019/07/09/dividend-sleuthing-with-r/"> R Views</a></strong>, and kindly contributed to <a href="https://www.r-bloggers.com/" rel="nofollow">R-bloggers)</a>      
+</p>
+
+            <p>Welcome to a mid-summer edition of <a href="http://www.reproduciblefinance.com/" rel="nofollow" target="_blank">Reproducible Finance with R</a>.
+ Today, we’ll explore the dividend histories of some stocks in the 
+S&amp;P 500. By way of history for all you young tech IPO and crypto 
+investors out there: way back, a long time ago in the dark ages, 
+companies used to take pains to generate free cash flow and then return 
+some of that free cash to investors in the form of dividends. That 
+hasn’t been very popular in the last 15 years, but now that it looks 
+increasing likely that interest rates will never, ever, ever rise to 
+“normal” levels again, dividend yields from those dinosaur companies 
+should be an attractive source of cash for a while.</p>
+<p>Let’s load up our packages.</p>
+<pre><code>library(tidyverse)
+library(tidyquant)
+library(riingo)
+
+riingo_set_token("your tiingo api key here")</code></pre>
+<p>We are going to source our data from <code>tiingo</code> by way of the <code>riingo</code> package, the same as we did in this <a href="http://www.reproduciblefinance.com/2019/01/14/looking-back-on-last-year/" rel="nofollow" target="_blank">previous post</a>, but first we need the tickers from the S&amp;P 500. Fortunately, the <code>tidyquant</code> package has this covered with the <code>tq_index()</code> function.</p>
+<pre><code>sp_500 &lt;- 
+  tq_index("SP500") 
+
+sp_500 %&gt;% 
+  head()</code></pre>
+<pre><code># A tibble: 6 x 5
+  symbol company                     weight sector              shares_held
+                                                  
+1 MSFT   Microsoft Corporation       0.0425 Information Techno…    85542230
+2 AAPL   Apple Inc.                  0.0354 Information Techno…    48795028
+3 AMZN   Amazon.com Inc.             0.0327 Consumer Discretio…     4616564
+4 FB     Facebook Inc. Class A       0.0190 Communication Serv…    26820356
+5 BRK.B  Berkshire Hathaway Inc. Cl… 0.0169 Financials             21622312
+6 JNJ    Johnson &amp; Johnson           0.0151 Health Care            29639160</code></pre>
+<p>We want to <code>pull()</code> out the symbols, and we also want to make sure they are supported by <code>tiingo</code>. We can create a master list of supported tickers with the <code>supported_tickers()</code> function from <code>riingo</code>.</p>
+<pre><code># heads up, there's ~ 79,000 tickers == 4mb of RAM of your machine
+test_tickers &lt;- 
+  supported_tickers() %&gt;% 
+  select(ticker) %&gt;% 
+  pull()</code></pre>
+<p>Let’s arrange the <code>sp_500</code> tickers by the <code>weight</code>
+ column and then slice the top 30 for today’s illustrative purposes. We 
+could easily extend this to the entire index by commenting out the <code>slice()</code>
+ code and running this on all 505 tickers (caution: I did this to test 
+the code flow and it works but it’s a big, RAM-intensive job.)</p>
+<pre><code>tickers &lt;-
+  sp_500 %&gt;% 
+  arrange(desc(weight)) %&gt;%
+  # We'll run this on the top 30, easily extendable to whole 500
+  slice(1:30) %&gt;% 
+  filter(symbol %in% test_tickers) %&gt;% 
+  pull(symbol)</code></pre>
+<p>Let’s import our data from <code>tiingo</code>, using the <code>riingo</code>
+ package. Since we’re only halfway through 2019 and companies haven’t 
+completed their annual dividend payments yet, let’s exclude this year 
+and set <code>end_date = "2018-12-31"</code>.</p>
+<pre><code>divs_from_riingo &lt;- 
+tickers %&gt;% 
+  riingo_prices(start_date = "1990-01-01", end_date = "2018-12-31") %&gt;% 
+  arrange(ticker) %&gt;% 
+  mutate(date = ymd(date))
+
+
+divs_from_riingo %&gt;% 
+  select(date, ticker, close, divCash) %&gt;% 
+  head()</code></pre>
+<pre><code># A tibble: 6 x 4
+  date       ticker close divCash
+            
+1 1990-01-02 AAPL    37.2       0
+2 1990-01-03 AAPL    37.5       0
+3 1990-01-04 AAPL    37.6       0
+4 1990-01-05 AAPL    37.8       0
+5 1990-01-08 AAPL    38         0
+6 1990-01-09 AAPL    37.6       0</code></pre>
+<p>Let’s take a look at the most recent dividend paid by each company, 
+to search for any weird outliers. We don’t want any 0-dollar dividend 
+dates, so we <code>filter(divCash &gt; 0)</code>, and we get the most recent payment with <code>slice(n())</code>, which grabs the last row of each group.</p>
+<pre><code>divs_from_riingo %&gt;% 
+  group_by(ticker) %&gt;% 
+  filter(divCash &gt; 0) %&gt;%
+  slice(n()) %&gt;% 
+  ggplot(aes(x = date, y = divCash, color = ticker)) + 
+  geom_point() + 
+  geom_label(aes(label = ticker)) +
+  scale_y_continuous(labels = scales::dollar)  +
+  scale_x_date(breaks = scales::pretty_breaks(n = 10)) +
+  labs(x = "", y = "div/share", title = "2019 Divs: Top 20 SP 500 companies") +
+  theme(legend.position = "none",
+        plot.title = element_text(hjust = 0.5)) </code></pre>
+<p><img src="Dividend%20Sleuthing%20with%20R_files/unnamed-chunk-6-1.png" data-recalc-dims="1" data-lazy-src="https://i1.wp.com/rviews.rstudio.com/post/2019-07-08-dividend-sleuthing-with-r_files/figure-html/unnamed-chunk-6-1.png?w=450&amp;is-pending-load=1#038;ssl=1"></p>
+<p>A $500 dividend from Google back in 2014? A little, um, internet 
+search engine’ing reveals that Google had a stock split in 2014 and 
+issued that split as a dividend. That’s not quite what we want to 
+capture today – in fact, we’re pretty much going to ignore splits and 
+special dividends. For now, let’s adjust our filter to <code>filter(date &gt; "2017-12-31" &amp; divCash &gt; 0)</code> and grab the last dividend paid in 2018.</p>
+<pre><code>divs_from_riingo %&gt;% 
+  group_by(ticker) %&gt;% 
+  filter(date &gt; "2017-12-31" &amp; divCash &gt; 0) %&gt;% 
+  slice(n()) %&gt;% 
+  ggplot(aes(x = date, y = divCash, color = ticker)) + 
+  geom_point() + 
+  geom_label(aes(label = ticker)) +
+  scale_y_continuous(labels = scales::dollar)  +
+  scale_x_date(breaks = scales::pretty_breaks(n = 10)) +
+  labs(x = "", y = "div/share", title = "2018 Divs: Top 20 SP 500 companies") +
+  theme(legend.position = "none",
+        plot.title = element_text(hjust = 0.5)) </code></pre>
+<p><img src="Dividend%20Sleuthing%20with%20R_files/unnamed-chunk-7-1.png" data-recalc-dims="1" data-lazy-src="https://i1.wp.com/rviews.rstudio.com/post/2019-07-08-dividend-sleuthing-with-r_files/figure-html/unnamed-chunk-7-1.png?w=450&amp;is-pending-load=1#038;ssl=1"></p>
+<p>Note, this is the absolute cash dividend payout. The dividend yield, 
+the total annual cash dividend divided by the share price, might be more
+ meaningful to us.</p>
+<p>To get the total annual yield, we want to sum the total dividends in 
+2018 and divide by the closing price at, say, the first dividend date.</p>
+<p>To get total dividends in a year, we first create a year column with <code>mutate(year = year(date))</code>, then <code>group_by(year, ticker)</code>, and finally make the calculation with <code>mutate(div_total = sum(divCash))</code>. From there, the yield is <code>mutate(div_yield = div_total/close)</code>.</p>
+<pre><code>divs_from_riingo %&gt;% 
+  group_by(ticker) %&gt;% 
+  filter(date &gt; "2017-12-31" &amp; divCash &gt; 0) %&gt;% 
+  mutate(year = year(date)) %&gt;% 
+  group_by(year, ticker) %&gt;% 
+  mutate(div_total = sum(divCash)) %&gt;% 
+  slice(1) %&gt;% 
+  mutate(div_yield = div_total/close) %&gt;% 
+  ggplot(aes(x = date, y = div_yield, color = ticker)) + 
+  geom_point() + 
+  geom_text(aes(label = ticker), vjust = 0, nudge_y = 0.002) +
+  scale_y_continuous(labels = scales::percent, breaks = scales::pretty_breaks(n = 10))  +
+  scale_x_date(breaks = scales::pretty_breaks(n = 10)) +
+  labs(x = "", y = "yield", title = "2018 Div Yield: Top 30 SP 500 companies") +
+  theme(legend.position = "none",
+        plot.title = element_text(hjust = 0.5)) </code></pre>
+<p><img src="Dividend%20Sleuthing%20with%20R_files/unnamed-chunk-8-1.png" data-recalc-dims="1" data-lazy-src="https://i2.wp.com/rviews.rstudio.com/post/2019-07-08-dividend-sleuthing-with-r_files/figure-html/unnamed-chunk-8-1.png?w=450&amp;is-pending-load=1#038;ssl=1"></p>
+<p>Let’s nitpick this visualization and take issue with the fact that 
+some of the labels are overlapping – just the type of small error that 
+drives our end audience crazy. It is also a good opportunity to explore 
+the <code>ggrepel</code> package. We can use the <code>geom_text_repel()</code> function, which will somehow “automatically” position our labels in a non-overlapping way.</p>
+<pre><code>library(ggrepel)
+
+divs_from_riingo %&gt;% 
+  group_by(ticker) %&gt;% 
+  filter(date &gt; "2017-12-31" &amp; divCash &gt; 0) %&gt;% 
+  mutate(year = year(date)) %&gt;% 
+  group_by(year, ticker) %&gt;% 
+  mutate(div_total = sum(divCash)) %&gt;% 
+  slice(1) %&gt;% 
+  mutate(div_yield = div_total/close) %&gt;% 
+  ggplot(aes(x = date, y = div_yield, color = ticker)) + 
+  geom_point() + 
+  geom_text_repel(aes(label = ticker), vjust = 0, nudge_y = 0.002) +
+  scale_y_continuous(labels = scales::percent, breaks = scales::pretty_breaks(n = 10))  +
+  scale_x_date(breaks = scales::pretty_breaks(n = 10)) +
+  labs(x = "", y = "yield", title = "2018 Divs: Top 20 SP 500 companies") +
+  theme(legend.position = "none",
+        plot.title = element_text(hjust = 0.5)) </code></pre>
+<p><img src="Dividend%20Sleuthing%20with%20R_files/unnamed-chunk-9-1.png" data-recalc-dims="1" data-lazy-src="https://i1.wp.com/rviews.rstudio.com/post/2019-07-08-dividend-sleuthing-with-r_files/figure-html/unnamed-chunk-9-1.png?w=450&amp;is-pending-load=1#038;ssl=1"></p>
+<p>We have a decent snapshot of these companies’ dividends in 2018. 
+Let’s dig into their histories a bit. If you’re into this kind of thing,
+ you might have heard of the Dividend Aristocrats or Dividend Kings or 
+some other nomenclature that indicates a quality dividend-paying 
+company. The core of these classifications is the consistency with which
+ companies increase their dividend payouts, because those annual 
+increases indicate a company that has strong free cash flow and believes
+ that shareholder value is tied to the dividend. For examples of 
+companies which don’t fit this description, check out every tech company
+ that has IPO’d in the last decade. (Just kidding. Actually, I’m not 
+kidding but now I guess I’m obligated to do a follow-up post on every 
+tech company that has IPO’d in the last decade so we can dig into their 
+free cash flow – stay tuned!)</p>
+<p>Back to dividend consistency, we’re interested in how each company 
+has behaved each year, and specifically scrutinizing whether the company
+ increased its dividend from the previous year.</p>
+<p>This is one of those fascinating areas of exploration that is quite 
+easy to conceptualize and even describe in plain English, but turns out 
+to require (at least for me) quite a bit of thought and white-boarding 
+(I mean Goggling and Stack Overflow snooping) to implement with code. In
+ English, we want to calculate the total dividend payout for each 
+company each year, then count how many years in a row the company has 
+increased that dividend consecutively up to today. Let’s get to it with 
+some code.</p>
+<p>We’ll start with a very similar code flow as above, except we want the whole history, no filtering to just 2018. Let’s also <code>arrange(ticker)</code> so we we can glance at how each ticker behaved.</p>
+<pre><code>divs_from_riingo %&gt;% 
+  mutate(year = year(date)) %&gt;% 
+  #filter(year &gt; "2017")
+  group_by(year, ticker) %&gt;% 
+  mutate(div_total = sum(divCash)) %&gt;% 
+  slice(1) %&gt;% 
+  arrange(ticker) %&gt;% 
+  select(div_total) %&gt;% 
+  head(10) </code></pre>
+<pre><code># A tibble: 10 x 3
+# Groups:   year, ticker [10]
+    year ticker div_total
+          
+ 1  1990 AAPL        0.45
+ 2  1991 AAPL        0.48
+ 3  1992 AAPL        0.48
+ 4  1993 AAPL        0.48
+ 5  1994 AAPL        0.48
+ 6  1995 AAPL        0.48
+ 7  1996 AAPL        0   
+ 8  1997 AAPL        0   
+ 9  1998 AAPL        0   
+10  1999 AAPL        0   </code></pre>
+<p>Let’s save that as an object called <code>divs_total</code>.</p>
+<pre><code>divs_total &lt;- 
+divs_from_riingo %&gt;% 
+  mutate(year = year(date)) %&gt;% 
+  group_by(year, ticker) %&gt;% 
+  mutate(div_total = sum(divCash)) %&gt;% 
+  slice(1) %&gt;% 
+  arrange(ticker) %&gt;% 
+  select(div_total)</code></pre>
+<p>The data now looks like we’re ready to get to work. But have a quick 
+peek at the AAPL data above. Notice anything weird? AAPL paid a dividend
+ of <code>$5.30</code> in 2012, <code>$11.80</code> in 2013, then <code>$7.28</code> in 2014, then around <code>$2.00</code>
+ going forward. There was a stock split and we probably shouldn’t 
+evaluate that as dividend decrease without adjusting for the split. We 
+don’t have that stock split data here today, but if we were doing this 
+in a more robust way, and maybe over the course of two posts, we would 
+mash in stock split data and adjust the dividends accordingly. For now, 
+we’ll just carry on using the <code>div_total</code> as the true dividend payout.</p>
+<p>Now we want to find years of consecutive increase, up to present day.<br>
+Let’s use <code>mutate(div_increase = case_when(divCash &gt; lag(divCash, 1) ~ 1, TRUE ~ 0))</code> to create a new column called <code>div_increase</code> that is a 1 if the dividend increased from the previous year and a 0 otherwise.</p>
+<pre><code>divs_total %&gt;% 
+  group_by(ticker) %&gt;% 
+  mutate(div_increase = case_when(div_total &gt; lag(div_total, 1) ~ 1, 
+                                  TRUE ~ 0)) %&gt;% 
+  tail(10)</code></pre>
+<pre><code># A tibble: 10 x 4
+# Groups:   ticker [1]
+    year ticker div_total div_increase
+                  
+ 1  2009 XOM         1.66            1
+ 2  2010 XOM         1.74            1
+ 3  2011 XOM         1.85            1
+ 4  2012 XOM         2.18            1
+ 5  2013 XOM         2.46            1
+ 6  2014 XOM         2.70            1
+ 7  2015 XOM         2.88            1
+ 8  2016 XOM         2.98            1
+ 9  2017 XOM         3.06            1
+10  2018 XOM         3.23            1</code></pre>
+<p>We can see that XOM has a nice history of increasing its dividend.</p>
+<p>For my brain, it’s easier to work through the next steps if we put 2018 as the first observation. Let’s use <code>arrange(desc(year))</code> to accomplish that.</p>
+<pre><code>divs_total %&gt;% 
+  group_by(ticker) %&gt;% 
+  mutate(div_increase = case_when(div_total &gt; lag(div_total, 1) ~ 1, 
+                                  TRUE ~ 0)) %&gt;% 
+  arrange(desc(year)) %&gt;%
+  arrange(ticker) %&gt;% 
+  slice(1:10)</code></pre>
+<pre><code># A tibble: 282 x 4
+# Groups:   ticker [29]
+    year ticker div_total div_increase
+                  
+ 1  2018 AAPL        2.82            1
+ 2  2017 AAPL        2.46            1
+ 3  2016 AAPL        2.23            1
+ 4  2015 AAPL        2.03            0
+ 5  2014 AAPL        7.28            0
+ 6  2013 AAPL       11.8             1
+ 7  2012 AAPL        5.3             1
+ 8  2011 AAPL        0               0
+ 9  2010 AAPL        0               0
+10  2009 AAPL        0               0
+# … with 272 more rows</code></pre>
+<p>Here I sliced off the first 10 rows of each group, so I could glance 
+with my human eyes and see if anything looked weird or plain wrong. Try 
+filtering by <code>AMZN</code> or <code>FB</code> or <code>GOOG</code>, companies we know haven’t paid a dividend. Make sure we see all zeroes. How about, say, <code>MSFT</code>?</p>
+<pre><code>divs_total %&gt;% 
+  group_by(ticker) %&gt;% 
+  mutate(div_increase = case_when(div_total &gt; lag(div_total, 1) ~ 1, 
+                                  TRUE ~ 0)) %&gt;% 
+  arrange(desc(year)) %&gt;%
+  arrange(ticker) %&gt;% 
+  filter(ticker == "MSFT")</code></pre>
+<pre><code># A tibble: 29 x 4
+# Groups:   ticker [1]
+    year ticker div_total div_increase
+                  
+ 1  2018 MSFT        1.72            1
+ 2  2017 MSFT        1.59            1
+ 3  2016 MSFT        1.47            1
+ 4  2015 MSFT        1.29            1
+ 5  2014 MSFT        1.15            1
+ 6  2013 MSFT        0.97            1
+ 7  2012 MSFT        0.83            1
+ 8  2011 MSFT        0.68            1
+ 9  2010 MSFT        0.55            1
+10  2009 MSFT        0.52            1
+# … with 19 more rows</code></pre>
+<p>Looks like a solid history going back to 2003. In 2004 <code>MSFT</code>
+ issued a special dividend that then made 2005 look like a down year. 
+Again, we’re not correcting for splits and special events so we’ll just 
+let this be. Back to it.</p>
+<p>Now we want to start in 2018 (this year) and count the number of consecutive dividend increases, or 1’s in the <code>div_increase</code>
+ column, going back in time. This is the piece that I found most 
+difficult to implement – how to detect if a certain behavior has 
+occurred every year, and if we see it stop, we want to delete all the 
+rows after is has stopped? I considered trying to condition on both 
+increases and consecutive years, but finally discovered a combination of
+ <code>slice()</code>, <code>seq_len()</code>, and <code>min(which(div_increase == 0))</code> that worked well.</p>
+<p>Let’s take it piece-by-painstaking-piece. If we just <code>slice(which(div_increase == 0))</code>, we get every instance of a dividend increase equal to 0.</p>
+<pre><code>divs_total %&gt;% 
+  group_by(ticker) %&gt;%
+  mutate(div_increase = case_when(div_total &gt; lag(div_total, 1) ~ 1, 
+                                  TRUE ~ 0)) %&gt;% 
+  arrange(desc(year)) %&gt;%
+  arrange(ticker) %&gt;% 
+  slice(which(div_increase == 0))</code></pre>
+<pre><code># A tibble: 319 x 4
+# Groups:   ticker [29]
+    year ticker div_total div_increase
+                  
+ 1  2015 AAPL        2.03            0
+ 2  2014 AAPL        7.28            0
+ 3  2011 AAPL        0               0
+ 4  2010 AAPL        0               0
+ 5  2009 AAPL        0               0
+ 6  2008 AAPL        0               0
+ 7  2007 AAPL        0               0
+ 8  2006 AAPL        0               0
+ 9  2005 AAPL        0               0
+10  2004 AAPL        0               0
+# … with 309 more rows</code></pre>
+<p>If we use <code>slice(min(which(div_increase == 0)))</code>, we get the first instance, for each group, of a dividend increase of zero.</p>
+<pre><code>divs_total %&gt;% 
+  group_by(ticker) %&gt;%
+  mutate(div_increase = case_when(div_total &gt; lag(div_total, 1) ~ 1, 
+                                  TRUE ~ 0)) %&gt;% 
+  arrange(desc(year)) %&gt;%
+  arrange(ticker) %&gt;% 
+  slice(min(which(div_increase == 0)))</code></pre>
+<pre><code># A tibble: 29 x 4
+# Groups:   ticker [29]
+    year ticker div_total div_increase
+                  
+ 1  2015 AAPL       2.03             0
+ 2  2018 AMZN       0                0
+ 3  2011 BA         1.68             0
+ 4  2013 BAC        0.04             0
+ 5  2014 C          0.04             0
+ 6  2017 CMCSA      0.473            0
+ 7  2010 CSCO       0                0
+ 8  2005 CVX        1.75             0
+ 9  2009 DIS        0.35             0
+10  2018 FB         0                0
+# … with 19 more rows</code></pre>
+<p>The magic comes from <code>seq_len</code>. If we use <code>slice(seq_len(min(which(div_increase == 0))))</code>, then we slice the rows from row 1 (which recall is the year 2018) through the first time we see a dividend increase of 0. <code>seq_len()</code>
+ creates a sequence of 1 through some number, in this case, we create a 
+sequence of 1 through the row number where we first see a dividend 
+increase of 0 (there’s a good tutorial on <code>seq_len</code> <a href="https://rpubs.com/Mentors_Ubiqum/seq_len" rel="nofollow" target="_blank">here</a>). And that’s what we want to keep.</p>
+<pre><code>divs_total %&gt;% 
+  group_by(ticker) %&gt;%
+  mutate(div_increase = case_when(div_total &gt; lag(div_total, 1) ~ 1, 
+                                  TRUE ~ 0)) %&gt;% 
+  arrange(desc(year)) %&gt;%
+  arrange(ticker) %&gt;% 
+  slice(seq_len(min(which(div_increase == 0))))</code></pre>
+<pre><code># A tibble: 240 x 4
+# Groups:   ticker [29]
+    year ticker div_total div_increase
+                  
+ 1  2018 AAPL        2.82            1
+ 2  2017 AAPL        2.46            1
+ 3  2016 AAPL        2.23            1
+ 4  2015 AAPL        2.03            0
+ 5  2018 AMZN        0               0
+ 6  2018 BA          6.84            1
+ 7  2017 BA          5.68            1
+ 8  2016 BA          4.36            1
+ 9  2015 BA          3.64            1
+10  2014 BA          2.92            1
+# … with 230 more rows</code></pre>
+<p>Now let’s order our data by those years of increase, so that the 
+company with the longest consecutive years of increase is at the top.</p>
+<pre><code>divs_total %&gt;% 
+  group_by(ticker) %&gt;%
+  mutate(div_increase = case_when(div_total &gt; lag(div_total, 1) ~ 1, 
+                                  TRUE ~ 0)) %&gt;% 
+  arrange(desc(year)) %&gt;%
+  arrange(ticker) %&gt;% 
+  slice(seq_len(min(which(div_increase ==0)))) %&gt;% 
+  mutate(div_inc_consec = sum(div_increase)) %&gt;% 
+  slice(1) %&gt;% 
+  arrange(desc(div_inc_consec))</code></pre>
+<pre><code># A tibble: 29 x 5
+# Groups:   ticker [29]
+    year ticker div_total div_increase div_inc_consec
+                            
+ 1  2018 PEP         3.59            1             20
+ 2  2018 JNJ         3.54            1             16
+ 3  2018 XOM         3.23            1             16
+ 4  2018 CVX         4.48            1             13
+ 5  2018 MSFT        1.72            1             13
+ 6  2018 PG          2.84            1             13
+ 7  2018 T           2               1             12
+ 8  2018 DIS         1.72            1              9
+ 9  2018 HD          4.12            1              9
+10  2018 UNH         3.45            1              9
+# … with 19 more rows</code></pre>
+<p>And the winner is….</p>
+<pre><code>divs_total %&gt;% 
+  group_by(ticker) %&gt;%
+  mutate(div_increase = case_when(div_total &gt; lag(div_total, 1) ~ 1, 
+                                  TRUE ~ 0)) %&gt;% 
+  arrange(desc(year)) %&gt;%
+  arrange(ticker) %&gt;% 
+  slice(seq_len(min(which(div_increase ==0)))) %&gt;% 
+  mutate(div_inc_consec = sum(div_increase)) %&gt;% 
+  slice(1) %&gt;% 
+  arrange(desc(div_inc_consec)) %&gt;% 
+  filter(div_inc_consec &gt; 0) %&gt;% 
+  ggplot(aes(x = reorder(ticker, div_inc_consec), y = div_inc_consec, fill = ticker)) +
+  geom_col(width = .5) +
+  geom_label_repel(aes(label = ticker), color = "white", nudge_y = .6) +
+  theme(legend.position = "none",
+        axis.title.x = element_blank(),
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank()) +
+  labs(x = "", y = "years consec div increase") +
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 10))</code></pre>
+<p><img src="Dividend%20Sleuthing%20with%20R_files/unnamed-chunk-19-1.png" data-recalc-dims="1" data-lazy-src="https://i0.wp.com/rviews.rstudio.com/post/2019-07-08-dividend-sleuthing-with-r_files/figure-html/unnamed-chunk-19-1.png?w=450&amp;is-pending-load=1#038;ssl=1"></p>
+<p><code>PEP</code>!! Followed by <code>JNJ</code> and <code>XOM</code>, though <code>MSFT</code> would have made the leader board without that special dividend, which made their dividend seem to drop in 2005.</p>
+<p>Before we close, for the curious, I did run this separately on all 
+505 members of the S&amp;P 500. It took about five minutes to pull the 
+data from <code>tiingo</code> because it’s 500 tickers, daily data, over 28 years, 2 million rows, 14 columns, and total size of 305.2 MB, but <em>fortes fortuna iuvat</em>.
+ Here’s a plot of all the tickers with at least five consecutive years 
+of dividend increases. This was created with the exact code flow we used
+ above, except I didn’t filter down to the top 30 by market cap.</p>
+<p><img src="Dividend%20Sleuthing%20with%20R_files/plot_consec_greater_than_five.png" data-recalc-dims="1" data-lazy-src="https://i0.wp.com/rviews.rstudio.com/post/2019-07-08-dividend-sleuthing-with-r_files/plot_consec_greater_than_five.png?w=456&amp;is-pending-load=1#038;ssl=1"></p>
+<p>Aren’t you just dying to know which ticker is that really high bar at the extreme right? It’s<br>
+<code>ATO</code>, Atmos Energy Corporation, with 28 years of consecutive
+ dividend increases but, side note, if we had adjusted for stock splits,
+ <code>ATO</code> would not have won this horse race.</p>
+<p>A couple of plugs before we close:</p>
+<p>If you like this sort of thing check out my book, <a href="https://www.amazon.com/Reproducible-Finance-Portfolio-Analysis-Chapman/dp/1138484032" rel="nofollow" target="_blank">Reproducible Finance with R</a>.</p>
+<p>I’m also going to be posting weekly code snippets on <a href="https://www.linkedin.com/in/jkregenstein/" rel="nofollow" target="_blank">linkedin</a>, connect with me there if you’re keen for some weekly R finance stuff.</p>
+<p>Happy coding!</p>
+
+
+				
+		
+
+            
+<div>
+<p>To <strong>leave a comment</strong> for the author, please follow the link and comment on their blog: <strong><a href="https://rviews.rstudio.com/2019/07/09/dividend-sleuthing-with-r/"> R Views</a></strong>.</p>
+<hr>
+<p><a href="https://www.r-bloggers.com/" rel="nofollow">R-bloggers.com</a> offers <strong><a href="https://feedburner.google.com/fb/a/mailverify?uri=RBloggers" rel="nofollow">daily e-mail updates</a></strong> about <a title="The R Project for Statistical Computing" href="https://www.r-project.org/" rel="nofollow">R</a> news and <a title="R tutorials" href="https://www.r-bloggers.com/search/tutorial" rel="nofollow">tutorials</a> on topics such as: <a title="Data science" href="https://www.r-bloggers.com/search/data%20science" rel="nofollow">Data science</a>, <a title="Big Data" href="https://www.r-bloggers.com/search/Big%20Data" rel="nofollow">Big Data, </a><a title="R jobs" href="https://www.r-users.com/" rel="nofollow">R jobs</a>, visualization (<a title="ggplot and ggplot2 tutorials" href="https://www.r-bloggers.com/search/ggplot2" rel="nofollow">ggplot2</a>, <a title="Boxplots using lattice and ggplot2 tutorials" href="https://www.r-bloggers.com/search/boxplot" rel="nofollow">Boxplots</a>, <a title="Maps and gis" href="https://www.r-bloggers.com/search/map" rel="nofollow">maps</a>, <a title="Animation in R" href="https://www.r-bloggers.com/search/animation" rel="nofollow">animation</a>), programming (<a title="RStudio IDE for R" href="https://www.r-bloggers.com/search/RStudio" rel="nofollow">RStudio</a>, <a title="Sweave and literate programming" href="https://www.r-bloggers.com/search/sweave" rel="nofollow">Sweave</a>, <a title="LaTeX in R" href="https://www.r-bloggers.com/search/LaTeX" rel="nofollow">LaTeX</a>, <a title="SQL and databases" href="https://www.r-bloggers.com/search/SQL" rel="nofollow">SQL</a>, <a title="Eclipse IDE for R" href="https://www.r-bloggers.com/search/eclipse" rel="nofollow">Eclipse</a>, <a title="git and github, Version Control System" href="https://www.r-bloggers.com/search/git" rel="nofollow">git</a>, <a title="Large data in R using Hadoop" href="https://www.r-bloggers.com/search/hadoop" rel="nofollow">hadoop</a>, <a title="Web Scraping of google, facebook, yahoo, twitter and more using R" href="https://www.r-bloggers.com/search/Web+Scraping" rel="nofollow">Web Scraping</a>) statistics (<a title="Regressions and ANOVA analysis tutorials" href="https://www.r-bloggers.com/search/regression" rel="nofollow">regression</a>, <a title="principal component analysis tutorial" href="https://www.r-bloggers.com/search/PCA" rel="nofollow">PCA</a>, <a title="Time series" href="https://www.r-bloggers.com/search/time+series" rel="nofollow">time series</a>, <a title="finance trading" href="https://www.r-bloggers.com/search/trading" rel="nofollow">trading</a>) and more...
+</p></div><hr><hr>
+<p>
+If you got this far, why not <strong><u>subscribe for updates</u> </strong>from the site?  Choose your flavor: <a href="https://feedburner.google.com/fb/a/mailverify?uri=RBloggers" rel="nofollow">e-mail</a>, <a href="https://twitter.com/#!/rbloggers" rel="nofollow">twitter</a>, <a href="https://feeds.feedburner.com/RBloggers" rel="nofollow">RSS</a>, or <a href="https://www.facebook.com/pages/R-bloggers/191414254890" rel="nofollow">facebook</a>...
+</p></div></div></div>
+    </div>
+
+    <div>
+      <div class="reader-message"></div>
+    </div>
+  </div>
+
+  <ul class="toolbar reader-toolbar">
+    <li><button class="button close-button" title="Close Reader View"></button></li>
+    <ul class="dropdown style-dropdown">
+      <li><button class="dropdown-toggle button style-button" title="Type controls"></button></li>
+      <li class="dropdown-popup">
+        <div class="font-type-buttons"><button class="sans-serif-button selected"><div class="name">Aa</div><div class="description">Sans-serif</div></button><button class="serif-button"><div class="name">Aa</div><div class="description">Serif</div></button></div>
+        <hr>
+        <div class="font-size-buttons">
+          <button class="minus-button" title="Decrease Font Size">
+          </button><button class="font-size-sample">Aa</button><button class="plus-button" title="Increase Font Size">
+        </button></div>
+        <hr>
+        <div class="content-width-buttons">
+          <button class="content-width-minus-button" title="Decrease Content Width">
+          </button><button class="content-width-plus-button" title="Increase Content Width">
+        </button></div>
+        <hr>
+        <div class="line-height-buttons">
+          <button class="line-height-minus-button" title="Decrease Line Height">
+          </button><button class="line-height-plus-button" title="Increase Line Height">
+        </button></div>
+        <hr>
+        <div class="color-scheme-buttons"><button class="light-button selected" title="Color Scheme Light"><div class="name">Light</div></button><button class="dark-button" title="Color Scheme Dark"><div class="name">Dark</div></button><button class="sepia-button" title="Color Scheme Sepia"><div class="name">Sepia</div></button></div>
+        <div class="dropdown-arrow">
+      </div></li>
+    </ul>
+  <ul class="dropdown narrate-dropdown"><li><button class="dropdown-toggle button narrate-toggle" title="Narrate"></button></li><li class="dropdown-popup"><div class="narrate-row narrate-control"><button class="narrate-skip-previous" disabled="disabled" title="Back"></button><button class="narrate-start-stop" title="Start"></button><button class="narrate-skip-next" disabled="disabled" title="Forward"></button></div><div class="narrate-row narrate-rate"><input class="narrate-rate-input" value="0" step="5" max="100" min="-100" type="range" title="Speed"></div><div class="narrate-row narrate-voices"><div class="voiceselect voice-select"><button class="select-toggle" aria-controls="voice-options">
+      <span class="label">Voice:</span> <span class="current-voice">Default</span>
+    </button>
+    <div class="options" id="voice-options" role="listbox"><button data-value="automatic" class="option selected" tabindex="-1" role="option" aria-selected="true">Default</button><button data-value="urn:moz-tts:sapi:Microsoft David Desktop - English (United States)?en-US" class="option" tabindex="-1" role="option">Microsoft David Desktop - English (United States)</button><button data-value="urn:moz-tts:sapi:Microsoft Zira Desktop - English (United States)?en-US" class="option" tabindex="-1" role="option">Microsoft Zira Desktop - English (United States)</button></div></div></div><div class="dropdown-arrow"></div></li></ul><button data-buttonid="pocket-button" class="button pocket-button" style="background-image: url(&quot;chrome://pocket/content/panels/img/pocket-outline.svg&quot;); background-size: 20px 20px;" title="Save to Pocket"></button></ul>
+
+
+
+
+</body></html>
